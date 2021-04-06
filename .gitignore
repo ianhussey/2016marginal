@@ -4,4 +4,5 @@ apa_articles/*/fulltext.txt
 .Rproj.user
 archive/original_article.pdf
 .Rhistory
- 
+
+*.DS_Store

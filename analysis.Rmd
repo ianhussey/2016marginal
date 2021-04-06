@@ -1,0 +1,208 @@
+---
+title: "Data processing"
+author: "Ian Hussey"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(tidyverse)
+
+load("combined_scraped_results.Rdata")
+
+```
+
+# do mention of "hypothesis", "data", "theory" etc come before p values?
+
+They should given the usual structure of introductions vs results.
+
+Consider removing things likely to be part of the introduction section, e.g., by filtering those that come more than N characters before the first p value. otherwise results are confounded by the length of the intro and discussion of previous work.
+
+```{r}
+
+# data_locations_p <- combined_scraped_results %>%
+#   filter(key == "locations_p.start") %>%
+#   dplyr::mutate(location_p_start = as.numeric(as.character(value))) %>%
+#   select(doi, location_p_start) %>%
+#   group_by(doi) %>%
+#   dplyr::mutate(location_first_p = min(location_p_start)) %>%
+#   ungroup()
+# 
+# data_locations_first_p <- data_locations_p %>%
+#   group_by(doi) %>%
+#   dplyr::summarize(location_first_p = min(location_p_start)) %>%
+#   ungroup()
+
+data_locations_first_p <- combined_scraped_results %>%
+  filter(key == "locations_p.start") %>%
+  dplyr::mutate(location_p_start = as.numeric(as.character(value))) %>%
+  select(doi, location_p_start) %>%
+  group_by(doi) %>%
+  dplyr::summarize(location_first_p = min(location_p_start)) %>%
+  ungroup()
+
+data_locations_strings <- combined_scraped_results %>%
+  filter(type != "p_values") %>%
+  mutate(value = as.numeric(as.character(value))) %>%
+  filter(!is.na(value)) %>%
+  select(doi, value) %>%
+  dplyr::rename(location_string_start = value) %>%
+  left_join(data_locations_first_p, by = "doi") %>%
+  mutate(string_after_first_p = ifelse(location_string_start > location_first_p, TRUE, FALSE))
+
+data_locations <- data_locations_strings %>%
+  group_by(doi, string_after_first_p) %>%
+  dplyr::summarize(location_first_string = min(location_string_start)) %>%
+  ungroup() %>%
+  left_join(data_locations_first_p, by = "doi")
+
+ggplot(data_locations, aes(location_first_string, location_first_p, color = string_after_first_p)) +
+  geom_point()
+
+data_locations %>%
+  gather(key, value, c("location_first_string", "location_first_p")) %>%
+  ggplot(aes(value, color = key)) +
+  geom_density() +
+  facet_wrap(~string_after_first_p)
+
+```
+
+## 75% of location of first p as cutoff
+
+```{r}
+
+data_locations_first_p <- combined_scraped_results %>%
+  filter(key == "locations_p.start") %>%
+  dplyr::mutate(location_p_start = as.numeric(as.character(value))) %>%
+  select(doi, location_p_start) %>%
+  group_by(doi) %>%
+  dplyr::summarize(location_first_p = min(location_p_start)) %>%
+  ungroup() %>%
+  mutate(location_first_p_75_percent = location_first_p*.75)
+
+data_locations_strings <- combined_scraped_results %>%
+  filter(type != "p_values") %>%
+  mutate(value = as.numeric(as.character(value))) %>%
+  filter(!is.na(value)) %>%
+  select(doi, value) %>%
+  dplyr::rename(location_string_start = value) %>%
+  left_join(data_locations_first_p, by = "doi") %>%
+  mutate(string_after_first_p_75_percent = ifelse(location_string_start > location_first_p_75_percent, TRUE, FALSE))
+
+data_locations <- data_locations_strings %>%
+  group_by(doi, string_after_first_p_75_percent) %>%
+  dplyr::summarize(location_first_string = min(location_string_start)) %>%
+  ungroup() %>%
+  left_join(data_locations_first_p, by = "doi")
+
+ggplot(data_locations, aes(location_first_string, location_first_p, color = string_after_first_p_75_percent)) +
+  geom_point()
+
+data_locations %>%
+  gather(key, value, c("location_first_string", "location_first_p")) %>%
+  ggplot(aes(value, color = key)) +
+  geom_density() +
+  facet_wrap(~string_after_first_p_75_percent)
+
+```
+
+above: rejoin to get indiviudal level strings and p values? 
+
+## Use the total length variable to find where p values tend to start in the manuscript
+
+```{r}
+
+# needed
+
+```
+
+# personalisation - of hypotheses only for the moment
+
+only uses the "hypothesis" string for the mo
+
+need to do some validation that these, and only these, are the right strings to search for,
+
+check that regular expressions are being used correclty here.
+
+```{r}
+
+data_personalizations_pre <- combined_scraped_results %>%
+  filter(grepl("string_", type) & grepl("pre_hypothesi", key)) %>%  #  | grepl("post_", key)
+  mutate(value = gsub('.{2}$', '', value))  %>% # remove last 2 characters
+  mutate(personalized = ifelse(grepl(".our$", value) | 
+                                 grepl(".my$", value) | 
+                                 grepl(".we$", value) |
+                                 grepl(".I$", value), TRUE, FALSE)) %>%
+  select(doi, type, personalized) %>%
+  mutate(type = str_remove_all("string_", type)) %>%
+  group_by(doi) %>%
+  dplyr::summarize(percent_personalized = mean(personalized, na.rm = TRUE),
+                   count_personalized = sum(personalized, na.rm = TRUE)) %>%
+  ungroup()
+
+#write_csv(data_personalizations_pre, "data_personalizations_pre.csv")
+
+```
+
+
+needs metrics of whether the results were positive or not.
+
+```{r}
+
+data_p_comparison <- combined_scraped_results %>%
+  filter(grepl("p_values", type) & grepl("comparison", key)) %>%
+  dplyr::rename(comparison = value) %>%
+  dplyr::select(doi, exemplar, comparison) 
+
+data_p_value <- combined_scraped_results %>%
+  filter(grepl("p_values", type) & grepl("value", key)) %>%
+  dplyr::mutate(p_value = as.numeric(value)) %>%
+  dplyr::select(doi, exemplar, p_value) 
+
+data_results_significance <- full_join(data_p_comparison, data_p_value, by = c("doi", "exemplar")) %>%
+  mutate(significant_result = ifelse(p_value < .05, TRUE,
+                                     ifelse(p_value == .05 & comparison == "<", TRUE, FALSE))) %>%
+  dplyr::group_by(doi) %>%
+  dplyr::summarize(percent_significant_results = mean(significant_result, na.rm = TRUE),
+                   count_significant_results = sum(significant_result, na.rm = TRUE)) %>%
+  ungroup()
+  
+```
+
+
+```{r}
+
+data_summaries_combined <- full_join(data_personalizations_pre, data_results_significance, by = "doi") 
+
+ggplot(data_summaries_combined, aes(percent_significant_results, percent_personalized)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+ggplot(data_summaries_combined, aes(count_significant_results, count_personalized)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+ggplot(data_summaries_combined, aes(percent_significant_results, count_personalized)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+
+
+cor.test(data_summaries_combined$percent_significant_result, data_summaries_combined$percent_personalized)
+
+cor.test(data_summaries_combined$percent_significant_result, data_summaries_combined$percent_personalized)
+
+```
+
+
+- other strategies could include scoring a paper as "1" if it personalizes ANY hypotheses etc, and comparing this to their results. 
+
+- could also use just the strings and not the p values to examine whehter people tend to simply say "supported *our* hypothesis" vs "did not support *the* hypothesis"
+
+
+
+

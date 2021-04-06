@@ -1,0 +1,32 @@
+---
+title: "Data processing"
+author: "Ian Hussey"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(data.table)
+
+# get data
+doi_folders <- list.files('apa_articles')
+
+doi_folder_paths <- paste0("apa_articles/", doi_folders, "/results.csv")
+
+results_files_that_exist <- doi_folder_paths[file.exists(doi_folder_paths)]
+
+combined_scraped_results = lapply(results_files_that_exist, read_csv) %>% 
+  bind_rows()
+
+save(combined_scraped_results, file = "combined_scraped_results.Rdata")
+#write_csv(combined_scraped_results, "combined_scraped_results.csv")
+
+```
+
